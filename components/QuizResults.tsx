@@ -6,10 +6,11 @@ interface QuizResultsProps {
   quiz: Quiz;
   userAnswers: UserAnswers;
   onReset: () => void;
+  initialCategoryName: string;
 }
 
-const CheckCircleIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+const CheckCircleIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" {...props}>
     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
   </svg>
 );
@@ -20,10 +21,10 @@ const XCircleIcon = () => (
   </svg>
 );
 
-const QuizResults: React.FC<QuizResultsProps> = ({ quiz, userAnswers, onReset }) => {
+const QuizResults: React.FC<QuizResultsProps> = ({ quiz, userAnswers, onReset, initialCategoryName }) => {
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishStatus, setPublishStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [categoryName, setCategoryName] = useState(quiz.title);
+  const [categoryName, setCategoryName] = useState(initialCategoryName || quiz.title);
 
   const { score, total, percentage } = useMemo(() => {
     let correctAnswers = 0;
@@ -84,7 +85,7 @@ const QuizResults: React.FC<QuizResultsProps> = ({ quiz, userAnswers, onReset })
                   const isSelected = userAnswerId === a.id;
                   return (
                     <div key={a.id} className={`flex items-center p-3 rounded-lg border-2 ${getBorderColor(isCorrect, isSelected)}`}>
-                      {isCorrect ? <CheckCircleIcon/> : (isSelected ? <XCircleIcon/> : <div className="w-5 h-5"></div>)}
+                      {isCorrect ? <CheckCircleIcon className="text-green-500"/> : (isSelected ? <XCircleIcon/> : <div className="w-5 h-5"></div>)}
                       <span className="ml-3 text-gray-700 dark:text-gray-300">{a.answer}</span>
                     </div>
                   );
@@ -108,25 +109,32 @@ const QuizResults: React.FC<QuizResultsProps> = ({ quiz, userAnswers, onReset })
             Create Another Quiz
           </button>
           
-          <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2 items-center">
-             <input
-              type="text"
-              value={categoryName}
-              onChange={(e) => setCategoryName(e.target.value)}
-              placeholder="Enter a category"
-              className="w-full sm:w-auto flex-grow px-4 py-3 bg-gray-100 dark:bg-gray-700 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-              required
-            />
-            <button 
-              onClick={handlePublish}
-              disabled={!categoryName.trim() || isPublishing || publishStatus === 'success'}
-              className="w-full sm:w-auto px-8 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-800 transition-all transform hover:scale-105 disabled:bg-gray-400 disabled:dark:bg-gray-600 disabled:cursor-not-allowed disabled:scale-100"
-            >
-              {isPublishing ? 'Publishing...' : (publishStatus === 'success' ? 'Published!' : 'Publish Quiz')}
-            </button>
-          </div>
+          {publishStatus === 'success' ? (
+            <div className="w-full sm:w-auto flex-grow flex items-center justify-center gap-2 p-3 bg-green-100 dark:bg-green-900/50 rounded-lg">
+              <CheckCircleIcon className="w-6 h-6 text-green-600 dark:text-green-400" />
+              <span className="font-semibold text-green-700 dark:text-green-300">Quiz Published Successfully!</span>
+            </div>
+          ) : (
+            <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2 items-center">
+              <input
+                type="text"
+                value={categoryName}
+                onChange={(e) => setCategoryName(e.target.value)}
+                placeholder="Enter a category"
+                className="w-full sm:w-auto flex-grow px-4 py-3 bg-gray-100 dark:bg-gray-700 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                required
+              />
+              <button 
+                onClick={handlePublish}
+                disabled={!categoryName.trim() || isPublishing}
+                className="w-full sm:w-auto px-8 py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-800 transition-all transform hover:scale-105 disabled:bg-gray-400 disabled:dark:bg-gray-600 disabled:cursor-not-allowed disabled:scale-100"
+              >
+                {isPublishing ? 'Publishing...' : 'Publish Quiz'}
+              </button>
+            </div>
+          )}
         </div>
-        {publishStatus === 'success' && <p className="text-green-600 dark:text-green-400">Quiz saved successfully!</p>}
+        
         {publishStatus === 'error' && <p className="text-red-500 dark:text-red-400">Failed to publish quiz. Please try again.</p>}
       </div>
     </div>

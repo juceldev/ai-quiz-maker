@@ -15,6 +15,7 @@ const App: React.FC = () => {
   const [userAnswers, setUserAnswers] = useState<UserAnswers>({});
   const [publishedContent, setPublishedContent] = useState<CategoryWithQuizzes[]>([]);
   const [categories, setCategories] = useState<QuizCategory[]>([]);
+  const [currentCategoryName, setCurrentCategoryName] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +40,7 @@ const App: React.FC = () => {
       const prompt = `Generate a quiz about "${title}" from the topic of "${category}".`;
       const data = await generateQuiz(prompt);
       setQuizData(data);
+      setCurrentCategoryName(category);
       setQuizState(QuizState.TAKING);
       setUserAnswers({});
     } catch (err: any) {
@@ -82,6 +84,7 @@ const App: React.FC = () => {
     try {
       const data = await getQuizById(id);
       setQuizData(data);
+      setCurrentCategoryName(''); // Reset category when taking a published quiz
       setQuizState(QuizState.TAKING);
       setUserAnswers({});
     } catch (err: any) {
@@ -101,6 +104,7 @@ const App: React.FC = () => {
     setQuizData(null);
     setUserAnswers({});
     setError(null);
+    setCurrentCategoryName('');
     setQuizState(QuizState.SELECTING_TOPIC);
   }, []);
 
@@ -119,7 +123,7 @@ const App: React.FC = () => {
         return <p>Something went wrong. Please try again.</p>;
       case QuizState.RESULTS:
         if (quizData) {
-          return <QuizResults quiz={quizData} userAnswers={userAnswers} onReset={handleReset} />;
+          return <QuizResults quiz={quizData} userAnswers={userAnswers} onReset={handleReset} initialCategoryName={currentCategoryName} />;
         }
         return <p>Something went wrong. Please try again.</p>;
       case QuizState.VIEWING_PUBLISHED:

@@ -77,40 +77,38 @@ CREATE TABLE `wp_quiz_aysquiz_answers` (
 
 // --- API Routes ---
 
-// GET /api/categories - Fetches all quiz categories
-app.get('/api/categories', async (req, res) => {
-    try {
-        const query = 'SELECT id, title FROM wp_quiz_aysquiz_quizcategories ORDER BY title ASC';
-        const [rows] = await pool.query(query);
-        res.json(rows);
-    } catch (error) {
-        console.error('Failed to fetch categories:', error);
-        res.status(500).json({ message: 'Error fetching categories from the database.' });
-    }
-});
-
-// POST /api/categories - Creates a new category
-app.post('/api/categories', async (req, res) => {
-    const { title } = req.body;
-    if (!title || typeof title !== 'string' || title.trim().length === 0) {
-        return res.status(400).json({ message: 'Category title is required.' });
-    }
-    try {
-        const [result] = await pool.execute(
-            'INSERT INTO wp_quiz_aysquiz_quizcategories (title) VALUES (?)',
-            [title.trim()]
-        );
-        const newCategory = { id: result.insertId, title: title.trim() };
-        res.status(201).json(newCategory);
-    } catch (error) {
-        if (error.code === 'ER_DUP_ENTRY') {
-            return res.status(409).json({ message: 'A category with this title already exists.' });
+// GET and POST handlers for /api/categories
+app.route('/api/categories')
+    .get(async (req, res) => {
+        try {
+            const query = 'SELECT id, title FROM wp_quiz_aysquiz_quizcategories ORDER BY title ASC';
+            const [rows] = await pool.query(query);
+            res.json(rows);
+        } catch (error) {
+            console.error('Failed to fetch categories:', error);
+            res.status(500).json({ message: 'Error fetching categories from the database.' });
         }
-        console.error('Failed to create category:', error);
-        res.status(500).json({ message: 'Error creating category in the database.' });
-    }
-});
-
+    })
+    .post(async (req, res) => {
+        const { title } = req.body;
+        if (!title || typeof title !== 'string' || title.trim().length === 0) {
+            return res.status(400).json({ message: 'Category title is required.' });
+        }
+        try {
+            const [result] = await pool.execute(
+                'INSERT INTO wp_quiz_aysquiz_quizcategories (title) VALUES (?)',
+                [title.trim()]
+            );
+            const newCategory = { id: result.insertId, title: title.trim() };
+            res.status(201).json(newCategory);
+        } catch (error) {
+            if (error.code === 'ER_DUP_ENTRY') {
+                return res.status(409).json({ message: 'A category with this title already exists.' });
+            }
+            console.error('Failed to create category:', error);
+            res.status(500).json({ message: 'Error creating category in the database.' });
+        }
+    });
 
 // GET /api/published-content - Fetches categories with their quizzes
 app.get('/api/published-content', async (req, res) => {
