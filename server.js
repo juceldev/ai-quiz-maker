@@ -50,7 +50,6 @@ CREATE TABLE `wp_quiz_aysquiz_quizes` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `description` text COLLATE utf8mb4_unicode_ci,
-  `question_ids` text COLLATE utf8mb4_unicode_ci,
   `quiz_category_id` int(11) DEFAULT NULL,
   `create_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -60,9 +59,12 @@ CREATE TABLE `wp_quiz_aysquiz_quizes` (
 
 CREATE TABLE `wp_quiz_aysquiz_questions` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
+  `quiz_id` int(11) NOT NULL,
   `question` text COLLATE utf8mb4_unicode_ci NOT NULL,
   `explanation` text COLLATE utf8mb4_unicode_ci,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `quiz_id` (`quiz_id`),
+  CONSTRAINT `wp_quiz_aysquiz_questions_ibfk_1` FOREIGN KEY (`quiz_id`) REFERENCES `wp_quiz_aysquiz_quizes` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `wp_quiz_aysquiz_answers` (
@@ -71,7 +73,8 @@ CREATE TABLE `wp_quiz_aysquiz_answers` (
   `answer` text COLLATE utf8mb4_unicode_ci NOT NULL,
   `correct` tinyint(1) NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),
-  KEY `question_id` (`question_id`)
+  KEY `question_id` (`question_id`),
+  CONSTRAINT `wp_quiz_aysquiz_answers_ibfk_1` FOREIGN KEY (`question_id`) REFERENCES `wp_quiz_aysquiz_questions` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 */
 
@@ -157,39 +160,40 @@ app.get('/api/published-content', async (req, res) => {
 app.get('/api/quizzes/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        const [quizRows] = await pool.query('SELECT * FROM wp_quiz_aysquiz_quizes WHERE id = ?', [id]);
+        const [quizRows] = await pool.query('SELECT title, description FROM wp_quiz_aysquiz_quizes WHERE id = ?', [id]);
         if (quizRows.length === 0) {
             return res.status(404).json({ message: 'Quiz not found.' });
         }
         
         const quizData = quizRows[0];
-        const questionIds = quizData.question_ids ? quizData.question_ids.split(',') : [];
+        
+        const [questions] = await pool.query('SELECT id, question, explanation FROM wp_quiz_aysquiz_questions WHERE quiz_id = ? ORDER BY id ASC', [id]);
 
-        if (questionIds.length === 0) {
+        if (questions.length === 0) {
              return res.json({ title: quizData.title, description: quizData.description, questions: [] });
         }
         
-        const [questions] = await pool.query(`SELECT id, question, explanation FROM wp_quiz_aysquiz_questions WHERE id IN (?)`, [questionIds]);
+        const questionIds = questions.map(q => q.id);
         const [answers] = await pool.query(`SELECT id, question_id, answer, correct FROM wp_quiz_aysquiz_answers WHERE question_id IN (?)`, [questionIds]);
 
-        const questionMap = {};
-        questions.forEach(q => {
-            questionMap[q.id] = { ...q, id: `q-db-${q.id}`, answers: [] };
-        });
-
+        const answerMap = {};
         answers.forEach(a => {
-            if (questionMap[a.question_id]) {
-                questionMap[a.question_id].answers.push({ ...a, correct: !!a.correct, id: `a-db-${a.id}` });
+            if (!answerMap[a.question_id]) {
+                answerMap[a.question_id] = [];
             }
+            answerMap[a.question_id].push({ ...a, correct: !!a.correct, id: `a-db-${a.id}` });
         });
 
-        // Ensure question order is preserved
-        const orderedQuestions = questionIds.map(qId => questionMap[qId]).filter(Boolean);
+        const assembledQuestions = questions.map(q => ({
+            ...q,
+            id: `q-db-${q.id}`,
+            answers: answerMap[q.id] || []
+        }));
 
         res.json({
             title: quizData.title,
             description: quizData.description,
-            questions: orderedQuestions,
+            questions: assembledQuestions,
         });
 
     } catch (error) {
@@ -229,16 +233,14 @@ app.post('/api/quizzes', async (req, res) => {
             [title, description, categoryId]
         );
         const quizId = quizResult.insertId;
-        const insertedQuestionIds = [];
 
-        // 3. Loop through questions and insert them
+        // 3. Loop through questions and insert them with the quizId
         for (const q of questions) {
             const [questionResult] = await connection.execute(
-                'INSERT INTO wp_quiz_aysquiz_questions (question, explanation) VALUES (?, ?)',
-                [q.question, q.explanation]
+                'INSERT INTO wp_quiz_aysquiz_questions (quiz_id, question, explanation) VALUES (?, ?, ?)',
+                [quizId, q.question, q.explanation]
             );
             const questionId = questionResult.insertId;
-            insertedQuestionIds.push(questionId);
 
             // 4. Loop through answers for the current question and insert them
             if (q.answers && q.answers.length > 0) {
@@ -249,12 +251,6 @@ app.post('/api/quizzes', async (req, res) => {
                 );
             }
         }
-        
-        // 5. Update the quiz entry with the CSV of question IDs
-        await connection.execute(
-            'UPDATE wp_quiz_aysquiz_quizes SET question_ids = ? WHERE id = ?',
-            [insertedQuestionIds.join(','), quizId]
-        );
 
         await connection.commit();
         res.status(201).json({ message: 'Quiz published successfully!', quizId: quizId });
