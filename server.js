@@ -96,6 +96,33 @@ CREATE TABLE `wp_quiz_aysquiz_answers` (
   PRIMARY KEY (`id`)
   -- Other columns from schema omitted for brevity as they are not used by the app
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
+
+CREATE TABLE `wp_quiz_posts` (
+  `ID` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `post_author` bigint(20) UNSIGNED NOT NULL DEFAULT 0,
+  `post_date` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `post_date_gmt` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `post_content` longtext NOT NULL,
+  `post_title` text NOT NULL,
+  `post_excerpt` text NOT NULL,
+  `post_status` varchar(20) NOT NULL DEFAULT 'publish',
+  `comment_status` varchar(20) NOT NULL DEFAULT 'open',
+  `ping_status` varchar(20) NOT NULL DEFAULT 'open',
+  `post_password` varchar(255) NOT NULL DEFAULT '',
+  `post_name` varchar(200) NOT NULL DEFAULT '',
+  `to_ping` text NOT NULL,
+  `pinged` text NOT NULL,
+  `post_modified` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `post_modified_gmt` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `post_content_filtered` longtext NOT NULL,
+  `post_parent` bigint(20) UNSIGNED NOT NULL DEFAULT 0,
+  `guid` varchar(255) NOT NULL DEFAULT '',
+  `menu_order` int(11) NOT NULL DEFAULT 0,
+  `post_type` varchar(20) NOT NULL DEFAULT 'post',
+  `post_mime_type` varchar(100) NOT NULL DEFAULT '',
+  `comment_count` bigint(20) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`ID`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
 */
 
 // --- API Routes ---
@@ -293,14 +320,68 @@ app.post('/api/quizzes', async (req, res) => {
         const questionIdsString = newQuestionIds.join(',');
         const createDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
-
         // 6. Insert the main quiz entry with the string of question IDs
         const [quizResult] = await connection.execute(
             'INSERT INTO wp_quiz_aysquiz_quizes (title, description, quiz_category_id, published, question_ids, ordering, author_id, create_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
             [title, description, quizCategoryId, 1, questionIdsString, 1, 0, createDate]
         );
         const quizId = quizResult.insertId;
+        
+        // 7. Create a corresponding post in wp_quiz_posts to link the quiz
+        const postDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
+        const slug = title.toString().toLowerCase()
+            .replace(/\s+/g, '-')       // Replace spaces with -
+            .replace(/[^\w\-]+/g, '')   // Remove all non-word chars
+            .replace(/\-\-+/g, '-')     // Replace multiple - with single -
+            .replace(/^-+/, '')          // Trim - from start of text
+            .replace(/-+$/, '');         // Trim - from end of text
 
+        const [postResult] = await connection.execute(
+            `INSERT INTO wp_quiz_posts (
+                post_author, post_date, post_date_gmt, post_content, post_title, post_excerpt,
+                post_status, comment_status, ping_status, post_password, post_name, to_ping,
+                pinged, post_modified, post_modified_gmt, post_content_filtered, post_parent,
+                guid, menu_order, post_type, post_mime_type, comment_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                1, // post_author
+                postDate, // post_date
+                postDate, // post_date_gmt
+                `[ays_quiz id="${quizId}"]`, // post_content
+                title, // post_title
+                '', // post_excerpt
+                'draft', // post_status
+                'closed', // comment_status
+                'closed', // ping_status
+                '', // post_password
+                slug, // post_name
+                '', // to_ping
+                '', // pinged
+                postDate, // post_modified
+                postDate, // post_modified_gmt
+                '', // post_content_filtered
+                0, // post_parent
+                '', // guid - will update after insert
+                0, // menu_order
+                'ays-quiz-maker', // post_type
+                '', // post_mime_type
+                0 // comment_count
+            ]
+        );
+        const postId = postResult.insertId;
+
+        // 8. Update the guid for the new post
+        const guid = `?post_type=ays-quiz-maker&p=${postId}`;
+        await connection.execute(
+            'UPDATE wp_quiz_posts SET guid = ? WHERE ID = ?',
+            [guid, postId]
+        );
+
+        // 9. Update the quiz with the custom_post_id
+        await connection.execute(
+            'UPDATE wp_quiz_aysquiz_quizes SET custom_post_id = ? WHERE id = ?',
+            [postId, quizId]
+        );
 
         await connection.commit();
         res.status(201).json({ message: 'Quiz published successfully!', quizId: quizId, createDate: createDate });
