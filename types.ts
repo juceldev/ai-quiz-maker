@@ -19,6 +19,7 @@ export interface Quiz {
 
 export enum QuizState {
   SELECTING_TOPIC = 'selecting_topic',
+  PREVIEW = 'preview',
   TAKING = 'taking',
   RESULTS = 'results',
   VIEWING_PUBLISHED = 'viewing_published',
