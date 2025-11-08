@@ -303,7 +303,7 @@ app.post('/api/quizzes', async (req, res) => {
 
 
         await connection.commit();
-        res.status(201).json({ message: 'Quiz published successfully!', quizId: quizId });
+        res.status(201).json({ message: 'Quiz published successfully!', quizId: quizId, createDate: createDate });
 
     } catch (error) {
         if (connection) await connection.rollback();

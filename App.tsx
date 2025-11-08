@@ -29,6 +29,7 @@ const App: React.FC = () => {
   // State for publishing from the preview screen
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishStatus, setPublishStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [lastPublishedDate, setLastPublishedDate] = useState<string | null>(null);
 
   useEffect(() => {
     // Fetch categories when the app loads for the generator
@@ -54,6 +55,7 @@ const App: React.FC = () => {
       setCurrentCategoryName(category);
       setPublishCategoryName(category); // Pre-fill publish input
       setPublishStatus('idle'); // Reset status for the new quiz
+      setLastPublishedDate(null); // Reset date
       setQuizState(QuizState.PREVIEW);
       setUserAnswers({});
     } catch (err: any) {
@@ -69,7 +71,8 @@ const App: React.FC = () => {
     setIsPublishing(true);
     setPublishStatus('idle');
     try {
-      await publishQuiz(quizData, publishCategoryName);
+      const response = await publishQuiz(quizData, publishCategoryName);
+      setLastPublishedDate(response.createDate);
       setPublishStatus('success');
     } catch (error: any) {
       console.error("Failed to publish quiz:", error);
@@ -139,6 +142,7 @@ const App: React.FC = () => {
     setError(null);
     setCurrentCategoryName('');
     setPublishCategoryName('');
+    setLastPublishedDate(null);
     setQuizState(QuizState.SELECTING_TOPIC);
   }, []);
 
@@ -185,9 +189,16 @@ const App: React.FC = () => {
                     <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4">Actions</h3>
                     <div className="space-y-4">
                         {publishStatus === 'success' ? (
-                            <div className="flex items-center justify-center gap-2 p-3 bg-green-100 dark:bg-green-900/50 rounded-lg">
-                                <CheckCircleIcon className="w-6 h-6 text-green-600 dark:text-green-400" />
-                                <span className="font-semibold text-green-700 dark:text-green-300">Quiz Published Successfully!</span>
+                            <div className="flex flex-col items-center justify-center gap-1 p-3 bg-green-100 dark:bg-green-900/50 rounded-lg">
+                                <div className="flex items-center gap-2">
+                                  <CheckCircleIcon className="w-6 h-6 text-green-600 dark:text-green-400" />
+                                  <span className="font-semibold text-green-700 dark:text-green-300">Quiz Published Successfully!</span>
+                                </div>
+                                {lastPublishedDate && (
+                                  <p className="text-sm text-green-600 dark:text-green-400">
+                                      Published on: {new Date(lastPublishedDate).toLocaleString()}
+                                  </p>
+                                )}
                             </div>
                         ) : (
                             <div className="flex flex-col sm:flex-row gap-2 items-center">

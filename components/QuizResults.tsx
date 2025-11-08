@@ -25,6 +25,7 @@ const QuizResults: React.FC<QuizResultsProps> = ({ quiz, userAnswers, onReset, i
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishStatus, setPublishStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [categoryName, setCategoryName] = useState(initialCategoryName || quiz.title);
+  const [publishedDate, setPublishedDate] = useState<string | null>(null);
 
   const { score, total, percentage } = useMemo(() => {
     let correctAnswers = 0;
@@ -47,7 +48,8 @@ const QuizResults: React.FC<QuizResultsProps> = ({ quiz, userAnswers, onReset, i
     setIsPublishing(true);
     setPublishStatus('idle');
     try {
-      await publishQuiz(quiz, categoryName);
+      const response = await publishQuiz(quiz, categoryName);
+      setPublishedDate(response.createDate);
       setPublishStatus('success');
     } catch (error) {
       console.error("Failed to publish quiz:", error);
@@ -110,9 +112,16 @@ const QuizResults: React.FC<QuizResultsProps> = ({ quiz, userAnswers, onReset, i
           </button>
           
           {publishStatus === 'success' ? (
-            <div className="w-full sm:w-auto flex-grow flex items-center justify-center gap-2 p-3 bg-green-100 dark:bg-green-900/50 rounded-lg">
-              <CheckCircleIcon className="w-6 h-6 text-green-600 dark:text-green-400" />
-              <span className="font-semibold text-green-700 dark:text-green-300">Quiz Published Successfully!</span>
+            <div className="w-full sm:w-auto flex-grow flex flex-col items-center justify-center gap-1 p-3 bg-green-100 dark:bg-green-900/50 rounded-lg">
+              <div className="flex items-center gap-2">
+                <CheckCircleIcon className="w-6 h-6 text-green-600 dark:text-green-400" />
+                <span className="font-semibold text-green-700 dark:text-green-300">Quiz Published Successfully!</span>
+              </div>
+              {publishedDate && (
+                <p className="text-sm text-green-600 dark:text-green-400">
+                    Published on: {new Date(publishedDate).toLocaleString()}
+                </p>
+              )}
             </div>
           ) : (
             <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2 items-center">
