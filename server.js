@@ -36,6 +36,16 @@ const pool = mysql.createPool(dbConfig);
 
 // --- SQL Table Schemas (for reference based on user provided schema) ---
 /*
+CREATE TABLE `wp_quiz_aysquiz_quizcategories` (
+  `id` int(16) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `author_id` int(16) UNSIGNED NOT NULL DEFAULT 0,
+  `title` varchar(256) NOT NULL,
+  `description` text NOT NULL,
+  `published` tinyint(3) UNSIGNED NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
+-- This table is used for quiz categories, which are selected/created by the user in the UI.
+
 CREATE TABLE `wp_quiz_aysquiz_categories` (
   `id` int(16) UNSIGNED NOT NULL AUTO_INCREMENT,
   `author_id` int(16) UNSIGNED NOT NULL DEFAULT 0,
@@ -44,9 +54,7 @@ CREATE TABLE `wp_quiz_aysquiz_categories` (
   `published` tinyint(3) UNSIGNED NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
-
--- The table `wp_quiz_aysquiz_quizcategories` is no longer used by this application.
--- All category logic now points to `wp_quiz_aysquiz_categories`.
+-- This table is used for question categories. It is kept in sync with quizcategories.
 
 CREATE TABLE `wp_quiz_aysquiz_quizes` (
   `id` int(16) UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -96,8 +104,8 @@ CREATE TABLE `wp_quiz_aysquiz_answers` (
 app.route('/api/categories')
     .get(async (req, res) => {
         try {
-            // Fetch from the single source of truth for categories
-            const query = 'SELECT id, title FROM wp_quiz_aysquiz_categories WHERE published = 1 ORDER BY title ASC';
+            // Fetch from the quiz categories table for the user-facing dropdown
+            const query = 'SELECT id, title FROM wp_quiz_aysquiz_quizcategories WHERE published = 1 ORDER BY title ASC';
             const [rows] = await pool.query(query);
             res.json(rows);
         } catch (error) {
@@ -114,9 +122,9 @@ app.route('/api/categories')
         try {
             const trimmedTitle = title.trim();
 
-            // Insert into the single source of truth for categories
+            // Insert into the quiz categories table
             const [result] = await pool.execute(
-                'INSERT INTO wp_quiz_aysquiz_categories (title, published, author_id, description) VALUES (?, ?, ?, ?)',
+                'INSERT INTO wp_quiz_aysquiz_quizcategories (title, published, author_id, description) VALUES (?, ?, ?, ?)',
                 [trimmedTitle, 1, 0, '']
             );
             
@@ -135,7 +143,7 @@ app.route('/api/categories')
 // GET /api/published-content - Fetches categories with their quizzes
 app.get('/api/published-content', async (req, res) => {
     try {
-        // Join with the single source of truth for categories
+        // Join with the quiz categories table
         const query = `
             SELECT 
                 cat.id as category_id, 
@@ -144,7 +152,7 @@ app.get('/api/published-content', async (req, res) => {
                 q.title as quiz_title,
                 q.description as quiz_description,
                 q.create_date as quiz_create_date
-            FROM wp_quiz_aysquiz_categories cat
+            FROM wp_quiz_aysquiz_quizcategories cat
             JOIN wp_quiz_aysquiz_quizes q ON cat.id = q.quiz_category_id
             WHERE q.published = 1 AND cat.published = 1
             ORDER BY cat.title, q.create_date DESC
@@ -241,31 +249,37 @@ app.post('/api/quizzes', async (req, res) => {
         connection = await pool.getConnection();
         await connection.beginTransaction();
 
-        // 1. Find or create the category in the single source of truth table
-        let categoryId;
-        const [categoryRows] = await connection.execute('SELECT id FROM wp_quiz_aysquiz_categories WHERE title = ?', [categoryName]);
+        // Helper function to find or create a category in a given table
+        const findOrCreateCategory = async (tableName, name) => {
+            const [rows] = await connection.execute(`SELECT id FROM ${tableName} WHERE title = ?`, [name]);
+            if (rows.length > 0) {
+                return rows[0].id;
+            } else {
+                const [result] = await connection.execute(
+                    `INSERT INTO ${tableName} (title, published, author_id, description) VALUES (?, ?, ?, ?)`, 
+                    [name, 1, 0, '']
+                );
+                return result.insertId;
+            }
+        };
+
+        // 1. Get quiz category ID from wp_quiz_aysquiz_quizcategories
+        const quizCategoryId = await findOrCreateCategory('wp_quiz_aysquiz_quizcategories', categoryName);
         
-        if (categoryRows.length > 0) {
-            categoryId = categoryRows[0].id;
-        } else {
-            const [categoryResult] = await connection.execute(
-                'INSERT INTO wp_quiz_aysquiz_categories (title, published, author_id, description) VALUES (?, ?, ?, ?)', 
-                [categoryName, 1, 0, '']
-            );
-            categoryId = categoryResult.insertId;
-        }
+        // 2. Get question category ID from wp_quiz_aysquiz_categories (ensures they are in sync)
+        const questionCategoryId = await findOrCreateCategory('wp_quiz_aysquiz_categories', categoryName);
         
-        // 2. Insert all questions and collect their new IDs, using the single categoryId
+        // 3. Insert all questions and collect their new IDs
         const newQuestionIds = [];
         for (const q of questions) {
             const [questionResult] = await connection.execute(
                 'INSERT INTO wp_quiz_aysquiz_questions (question, explanation, published, type, category_id, author_id) VALUES (?, ?, ?, ?, ?, ?)',
-                [q.question, q.explanation, 1, 'radio', categoryId, 0]
+                [q.question, q.explanation, 1, 'radio', questionCategoryId, 0]
             );
             const questionId = questionResult.insertId;
             newQuestionIds.push(questionId);
 
-            // 3. Loop through answers for the current question and insert them
+            // 4. Loop through answers for the current question and insert them
             if (q.answers && q.answers.length > 0) {
                  const answerValues = q.answers.map((a, index) => [questionId, a.answer, a.correct, index + 1]);
                 await connection.query(
@@ -275,15 +289,15 @@ app.post('/api/quizzes', async (req, res) => {
             }
         }
         
-        // 4. Join the new question IDs into a comma-separated string
+        // 5. Join the new question IDs into a comma-separated string
         const questionIdsString = newQuestionIds.join(',');
         const createDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
 
-        // 5. Insert the main quiz entry with the string of question IDs, using the single categoryId
+        // 6. Insert the main quiz entry with the string of question IDs
         const [quizResult] = await connection.execute(
             'INSERT INTO wp_quiz_aysquiz_quizes (title, description, quiz_category_id, published, question_ids, ordering, author_id, create_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [title, description, categoryId, 1, questionIdsString, 1, 0, createDate]
+            [title, description, quizCategoryId, 1, questionIdsString, 1, 0, createDate]
         );
         const quizId = quizResult.insertId;
 
