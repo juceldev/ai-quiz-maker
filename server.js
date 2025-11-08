@@ -34,51 +34,57 @@ const dbConfig = {
 
 const pool = mysql.createPool(dbConfig);
 
-// --- SQL Table Schemas (for reference) ---
+// --- SQL Table Schemas (for reference based on user provided schema) ---
 /*
--- Use a tool like MySQL Workbench or the command line to run these queries
--- in your database to create the necessary tables.
-
 CREATE TABLE `wp_quiz_aysquiz_quizcategories` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `published` tinyint(1) NOT NULL DEFAULT '1',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `title` (`title`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `id` int(16) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `author_id` int(16) UNSIGNED NOT NULL DEFAULT 0,
+  `title` varchar(256) NOT NULL,
+  `description` text NOT NULL,
+  `published` tinyint(1) UNSIGNED NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
 
 CREATE TABLE `wp_quiz_aysquiz_quizes` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `description` text COLLATE utf8mb4_unicode_ci,
-  `quiz_category_id` int(11) DEFAULT NULL,
-  `create_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `published` tinyint(1) NOT NULL DEFAULT '0',
-  PRIMARY KEY (`id`),
-  KEY `quiz_category_id` (`quiz_category_id`),
-  CONSTRAINT `wp_quiz_aysquiz_quizes_ibfk_1` FOREIGN KEY (`quiz_category_id`) REFERENCES `wp_quiz_aysquiz_quizcategories` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `id` int(16) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `author_id` int(16) UNSIGNED NOT NULL DEFAULT 0,
+  `title` varchar(256) NOT NULL,
+  `description` text NOT NULL,
+  `quiz_image` text DEFAULT NULL,
+  `quiz_category_id` int(11) UNSIGNED NOT NULL,
+  `question_ids` text NOT NULL,
+  `ordering` int(16) NOT NULL,
+  `quiz_url` text DEFAULT NULL,
+  `published` tinyint(3) UNSIGNED NOT NULL,
+  `create_date` datetime DEFAULT NULL,
+  `custom_post_id` int(16) UNSIGNED DEFAULT NULL,
+  `options` text DEFAULT NULL,
+  `intervals` text DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
 
 CREATE TABLE `wp_quiz_aysquiz_questions` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `quiz_id` int(11) NOT NULL,
-  `question` text COLLATE utf8mb4_unicode_ci NOT NULL,
-  `explanation` text COLLATE utf8mb4_unicode_ci,
-  `published` tinyint(1) NOT NULL DEFAULT '0',
-  PRIMARY KEY (`id`),
-  KEY `quiz_id` (`quiz_id`),
-  CONSTRAINT `wp_quiz_aysquiz_questions_ibfk_1` FOREIGN KEY (`quiz_id`) REFERENCES `wp_quiz_aysquiz_quizes` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `id` int(16) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `author_id` int(16) UNSIGNED NOT NULL DEFAULT 0,
+  `category_id` int(16) UNSIGNED NOT NULL,
+  `question` text NOT NULL,
+  `explanation` text DEFAULT NULL,
+  `type` varchar(256) NOT NULL,
+  `published` tinyint(3) UNSIGNED NOT NULL,
+  `create_date` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`)
+  -- Other columns from schema omitted for brevity as they are not used by the app
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
 
 CREATE TABLE `wp_quiz_aysquiz_answers` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `question_id` int(11) NOT NULL,
-  `answer` text COLLATE utf8mb4_unicode_ci NOT NULL,
-  `correct` tinyint(1) NOT NULL DEFAULT '0',
-  PRIMARY KEY (`id`),
-  KEY `question_id` (`question_id`),
-  CONSTRAINT `wp_quiz_aysquiz_answers_ibfk_1` FOREIGN KEY (`question_id`) REFERENCES `wp_quiz_aysquiz_questions` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `id` int(150) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `question_id` int(11) UNSIGNED NOT NULL,
+  `answer` text NOT NULL,
+  `correct` tinyint(1) NOT NULL,
+  `ordering` int(11) NOT NULL,
+  PRIMARY KEY (`id`)
+  -- Other columns from schema omitted for brevity as they are not used by the app
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
 */
 
 // --- API Routes ---
@@ -102,8 +108,8 @@ app.route('/api/categories')
         }
         try {
             const [result] = await pool.execute(
-                'INSERT INTO wp_quiz_aysquiz_quizcategories (title, published) VALUES (?, ?)',
-                [title.trim(), 1]
+                'INSERT INTO wp_quiz_aysquiz_quizcategories (title, published, author_id, description) VALUES (?, ?, ?, ?)',
+                [title.trim(), 1, 0, '']
             );
             const newCategory = { id: result.insertId, title: title.trim() };
             res.status(201).json(newCategory);
@@ -163,20 +169,24 @@ app.get('/api/published-content', async (req, res) => {
 app.get('/api/quizzes/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        const [quizRows] = await pool.query('SELECT title, description FROM wp_quiz_aysquiz_quizes WHERE id = ?', [id]);
+        const [quizRows] = await pool.query('SELECT title, description, question_ids FROM wp_quiz_aysquiz_quizes WHERE id = ?', [id]);
         if (quizRows.length === 0) {
             return res.status(404).json({ message: 'Quiz not found.' });
         }
         
         const quizData = quizRows[0];
-        
-        const [questions] = await pool.query('SELECT id, question, explanation FROM wp_quiz_aysquiz_questions WHERE quiz_id = ? ORDER BY id ASC', [id]);
 
-        if (questions.length === 0) {
+        if (!quizData.question_ids) {
+            return res.json({ title: quizData.title, description: quizData.description, questions: [] });
+        }
+
+        const questionIds = quizData.question_ids.split(',').map(idStr => parseInt(idStr.trim(), 10)).filter(idNum => !isNaN(idNum));
+        
+        if (questionIds.length === 0) {
              return res.json({ title: quizData.title, description: quizData.description, questions: [] });
         }
         
-        const questionIds = questions.map(q => q.id);
+        const [questions] = await pool.query('SELECT id, question, explanation FROM wp_quiz_aysquiz_questions WHERE id IN (?)', [questionIds]);
         const [answers] = await pool.query(`SELECT id, question_id, answer, correct FROM wp_quiz_aysquiz_answers WHERE question_id IN (?)`, [questionIds]);
 
         const answerMap = {};
@@ -184,6 +194,7 @@ app.get('/api/quizzes/:id', async (req, res) => {
             if (!answerMap[a.question_id]) {
                 answerMap[a.question_id] = [];
             }
+            // Add ordering to make sure answers are displayed consistently, if not provided, use id.
             answerMap[a.question_id].push({ ...a, correct: !!a.correct, id: `a-db-${a.id}` });
         });
 
@@ -227,36 +238,44 @@ app.post('/api/quizzes', async (req, res) => {
             categoryId = categoryRows[0].id;
         } else {
             const [categoryResult] = await connection.execute(
-                'INSERT INTO wp_quiz_aysquiz_quizcategories (title, published) VALUES (?, ?)', 
-                [categoryName, 1]
+                'INSERT INTO wp_quiz_aysquiz_quizcategories (title, published, author_id, description) VALUES (?, ?, ?, ?)', 
+                [categoryName, 1, 0, '']
             );
             categoryId = categoryResult.insertId;
         }
 
-        // 2. Insert the main quiz entry and mark as published
-        const [quizResult] = await connection.execute(
-            'INSERT INTO wp_quiz_aysquiz_quizes (title, description, quiz_category_id, published) VALUES (?, ?, ?, ?)',
-            [title, description, categoryId, 1]
-        );
-        const quizId = quizResult.insertId;
-
-        // 3. Loop through questions and insert them with the quizId and mark as published
+        // 2. Insert all questions and collect their new IDs
+        const newQuestionIds = [];
         for (const q of questions) {
             const [questionResult] = await connection.execute(
-                'INSERT INTO wp_quiz_aysquiz_questions (quiz_id, question, explanation, published) VALUES (?, ?, ?, ?)',
-                [quizId, q.question, q.explanation, 1]
+                'INSERT INTO wp_quiz_aysquiz_questions (question, explanation, published, type, category_id, author_id) VALUES (?, ?, ?, ?, ?, ?)',
+                [q.question, q.explanation, 1, 'radio', 1, 0] // Assuming a default question category_id=1 and author_id=0
             );
             const questionId = questionResult.insertId;
+            newQuestionIds.push(questionId);
 
-            // 4. Loop through answers for the current question and insert them
+            // 3. Loop through answers for the current question and insert them
             if (q.answers && q.answers.length > 0) {
-                const answerValues = q.answers.map(a => [questionId, a.answer, a.correct]);
+                 const answerValues = q.answers.map((a, index) => [questionId, a.answer, a.correct, index + 1]);
                 await connection.query(
-                    'INSERT INTO wp_quiz_aysquiz_answers (question_id, answer, correct) VALUES ?',
+                    'INSERT INTO wp_quiz_aysquiz_answers (question_id, answer, correct, ordering) VALUES ?',
                     [answerValues]
                 );
             }
         }
+        
+        // 4. Join the new question IDs into a comma-separated string
+        const questionIdsString = newQuestionIds.join(',');
+        const createDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+
+        // 5. Insert the main quiz entry with the string of question IDs
+        const [quizResult] = await connection.execute(
+            'INSERT INTO wp_quiz_aysquiz_quizes (title, description, quiz_category_id, published, question_ids, ordering, author_id, create_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [title, description, categoryId, 1, questionIdsString, 1, 0, createDate]
+        );
+        const quizId = quizResult.insertId;
+
 
         await connection.commit();
         res.status(201).json({ message: 'Quiz published successfully!', quizId: quizId });
