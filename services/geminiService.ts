@@ -61,7 +61,7 @@ const quizSchema = {
 
 export const generateQuiz = async (prompt: string): Promise<Quiz> => {
     try {
-        const fullPrompt = `Generate a multiple-choice quiz based on the following topic: "${prompt}". The quiz should be engaging and informative. Ensure there is only one correct answer per question. Format the output as a JSON object that adheres to the provided schema.`;
+        const fullPrompt = `Generate a multiple-choice quiz with at least 20 questions based on the following topic: "${prompt}". The quiz should be engaging and informative. Ensure there is only one correct answer per question. Format the output as a JSON object that adheres to the provided schema.`;
 
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
