@@ -102,8 +102,8 @@ app.route('/api/categories')
         }
         try {
             const [result] = await pool.execute(
-                'INSERT INTO wp_quiz_aysquiz_quizcategories (title) VALUES (?)',
-                [title.trim()]
+                'INSERT INTO wp_quiz_aysquiz_quizcategories (title, published) VALUES (?, ?)',
+                [title.trim(), 1]
             );
             const newCategory = { id: result.insertId, title: title.trim() };
             res.status(201).json(newCategory);
@@ -226,7 +226,10 @@ app.post('/api/quizzes', async (req, res) => {
         if (categoryRows.length > 0) {
             categoryId = categoryRows[0].id;
         } else {
-            const [categoryResult] = await connection.execute('INSERT INTO wp_quiz_aysquiz_quizcategories (title) VALUES (?)', [categoryName]);
+            const [categoryResult] = await connection.execute(
+                'INSERT INTO wp_quiz_aysquiz_quizcategories (title, published) VALUES (?, ?)', 
+                [categoryName, 1]
+            );
             categoryId = categoryResult.insertId;
         }
 
