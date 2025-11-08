@@ -4,17 +4,29 @@ import { Quiz, PublishedQuiz, CategoryWithQuizzes, QuizCategory } from '../types
 const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:3001/api';
 
 const handleResponse = async (response: Response) => {
-    if (!response.ok) {
-        let errorData;
-        try {
-            errorData = await response.json();
-        } catch (e) {
-            const textError = await response.text();
-            throw new Error(textError || `HTTP error! status: ${response.status}`);
+    // Read the body as text ONCE to avoid "body already read" errors.
+    const text = await response.text();
+    let data;
+
+    try {
+        // Attempt to parse the text as JSON.
+        data = JSON.parse(text);
+    } catch (e) {
+        // If parsing fails, the response was not JSON.
+        if (response.ok) {
+            // This is unexpected for a successful response.
+            throw new Error("Received a non-JSON response from the server.");
         }
-        throw new Error(errorData.message || `An unknown API error occurred. Status: ${response.status}`);
+        // For a failed response, the raw text is the error message.
+        throw new Error(text || `HTTP error! status: ${response.status}`);
     }
-    return response.json();
+
+    if (!response.ok) {
+        // If it was JSON, throw the message from the server's response.
+        throw new Error(data.message || `An unknown API error occurred. Status: ${response.status}`);
+    }
+
+    return data;
 };
 
 const handleFetchError = (error: any, context: string): never => {
