@@ -1,0 +1,5 @@
+{
+  "name": "AI Quiz Maker",
+  "description": "An intelligent application that generates quizzes on any topic using the Gemini API. Users can enter a prompt, and the AI will create a complete quiz with questions and answers, which can then be taken and scored directly in the app.",
+  "requestFramePermissions": []
+}
